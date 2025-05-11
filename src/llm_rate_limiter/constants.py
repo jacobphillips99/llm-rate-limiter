@@ -1,3 +1,4 @@
 RATE_LIMIT_STATS_PATH = "/tmp/rate_limit_stats.json"
 RATE_LIMIT_WRITE_INTERVAL = 1.0
 MONITOR_REFRESH_RATE = 0.5
+DEFAULT_RATE_LIMIT_CONFIG_PATH = "default_rate_limits.yaml"

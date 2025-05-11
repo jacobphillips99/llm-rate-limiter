@@ -7,7 +7,13 @@ from typing import Optional, Any
 import logging
 
 from llm_rate_limiter.configs import ModelRateLimitConfig, RateLimitConfig, load_rate_limit_configs
-from llm_rate_limiter.constants import RATE_LIMIT_STATS_PATH, RATE_LIMIT_WRITE_INTERVAL
+from llm_rate_limiter.constants import DEFAULT_RATE_LIMIT_CONFIG_PATH, RATE_LIMIT_STATS_PATH, RATE_LIMIT_WRITE_INTERVAL
+
+log_level = os.environ.get('LLM_RATE_LIMIT_LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=getattr(logging, log_level, logging.INFO),  # fallback to INFO if invalid level
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +134,8 @@ class RateLimit:
         Args:
             config_path: Path to the rate limit configuration file
         """
+        if config_path == "default":
+            config_path = os.path.join(os.path.dirname(__file__), DEFAULT_RATE_LIMIT_CONFIG_PATH)
         self.register_config(load_rate_limit_configs(config_path))
 
     def get_config(self, provider: str, model: str) -> Optional[ModelRateLimitConfig]:
@@ -371,6 +379,6 @@ rate_limiter = RateLimit()
 # Load rate limit config from file
 if "RATE_LIMIT_CONFIG_PATH" not in os.environ:
     logger.warning("RATE_LIMIT_CONFIG_PATH not set, using default `Free / Tier 1` config")
-    rate_limiter.load_config(os.path.join(os.path.dirname(__file__), "default_rate_limits.yaml"))
+    rate_limiter.load_config(os.path.join(os.path.dirname(__file__), DEFAULT_RATE_LIMIT_CONFIG_PATH))
 else:
     rate_limiter.load_config(os.environ["RATE_LIMIT_CONFIG_PATH"])
