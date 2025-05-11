@@ -1,12 +1,8 @@
 """Rate limiting utilities for API calls with built-in monitoring."""
 
-import asyncio
-import json
+
 import logging
-import os
-import threading
-import time
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -40,8 +36,6 @@ class RateLimitConfig(BaseModel):
 
     providers: dict[str, ProviderRateLimits] = Field(default_factory=dict)
 
-"""Configuration utilities for VLM AutoEval Robot Benchmark."""
-
 
 def load_yaml_config(file_path: str) -> dict[str, Any]:
     """Load YAML configuration file."""
@@ -55,7 +49,7 @@ def load_yaml_config(file_path: str) -> dict[str, Any]:
         return {}
 
 
-def load_rate_limits(config_path: str) -> RateLimitConfig:
+def load_rate_limit_configs(config_path: str) -> RateLimitConfig:
     """Load rate limits from YAML configuration.
 
     Returns:

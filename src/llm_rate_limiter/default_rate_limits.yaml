@@ -1,0 +1,27 @@
+# Default rate limits for a few providers and models; assumes Free / Tier 1 / etc
+
+openai:
+  gpt-4o:
+    requests_per_minute: 500
+    tokens_per_minute: 30_000
+  o4-mini:
+    requests_per_minute: 500
+    tokens_per_minute: 200_000
+
+anthropic:
+  claude-3-7-sonnet-20250219:
+    requests_per_minute: 50
+    tokens_per_minute: 20_000
+
+  claude-3-5-sonnet-20241022:
+    requests_per_minute: 50
+    tokens_per_minute: 40_000
+
+gemini:
+  gemini/gemini-2.5-pro-preview-03-25:
+    requests_per_minute: 5
+    tokens_per_minute: 250_000
+
+  gemini/gemini-2.5-flash-preview-04-17:
+    requests_per_minute: 10
+    tokens_per_minute: 250_000

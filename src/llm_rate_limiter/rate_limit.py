@@ -4,10 +4,12 @@ import os
 import time
 import threading
 from typing import Optional, Any
+import logging
 
-from llm_rate_limiter.configs import ModelRateLimitConfig, RateLimitConfig
+from llm_rate_limiter.configs import ModelRateLimitConfig, RateLimitConfig, load_rate_limit_configs
 from llm_rate_limiter.constants import RATE_LIMIT_STATS_PATH, RATE_LIMIT_WRITE_INTERVAL
 
+logger = logging.getLogger(__name__)
 
 class RateLimit:
     """Rate limit handler for API calls with built-in monitoring."""
@@ -17,6 +19,7 @@ class RateLimit:
         stats_path: str = RATE_LIMIT_STATS_PATH,
         monitor_interval: float = RATE_LIMIT_WRITE_INTERVAL,
         disable_monitoring: bool = False,
+        config: RateLimitConfig = None,
     ) -> None:
         """Initialize the rate limit handler.
 
@@ -24,6 +27,7 @@ class RateLimit:
             stats_path: Path to write stats to. If None, uses /tmp/rate_limit_stats.json
             monitor_interval: How often to update the stats file (seconds)
             disable_monitoring: If True, won't write stats to file
+            config: Rate limit configuration
         """
         self._provider_model_configs: dict[str, dict[str, ModelRateLimitConfig]] = {}
         self._provider_model_states: dict[str, dict[str, dict]] = {}
@@ -41,6 +45,10 @@ class RateLimit:
             # This will be initialized when register_model is first called
             # or when get_usage_stats is first called
             pass
+
+        self._config = config
+        if self._config:
+            self.register_config(self._config)
 
     def _ensure_monitor_started(self) -> None:
         """Ensure the monitoring task is started if enabled."""
@@ -102,6 +110,25 @@ class RateLimit:
 
         # Start monitoring if enabled and not already started
         self._ensure_monitor_started()
+        logger.info(f"Registered {provider}/{model}")
+
+    def register_config(self, config: RateLimitConfig) -> None:
+        """Register a rate limit configuration.
+
+        Args:
+            config: Rate limit configuration
+        """
+        for provider, provider_config in config.providers.items():
+            for model, model_config in provider_config.models.items():
+                self.register_model(provider, model, model_config)
+
+    def load_config(self, config_path: str) -> None:
+        """Load a rate limit configuration from a file.
+
+        Args:
+            config_path: Path to the rate limit configuration file
+        """
+        self.register_config(load_rate_limit_configs(config_path))
 
     def get_config(self, provider: str, model: str) -> Optional[ModelRateLimitConfig]:
         """Get the rate limit configuration for a provider/model.
@@ -340,3 +367,10 @@ class RateLimit:
 
 # Global rate limiter instance
 rate_limiter = RateLimit()
+
+# Load rate limit config from file
+if "RATE_LIMIT_CONFIG_PATH" not in os.environ:
+    logger.warning("RATE_LIMIT_CONFIG_PATH not set, using default `Free / Tier 1` config")
+    rate_limiter.load_config(os.path.join(os.path.dirname(__file__), "default_rate_limits.yaml"))
+else:
+    rate_limiter.load_config(os.environ["RATE_LIMIT_CONFIG_PATH"])
