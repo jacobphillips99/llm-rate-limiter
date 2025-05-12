@@ -56,26 +56,27 @@ A minimal example of using the rate limiter is shown below. We create an async f
 ```python
 from llm_rate_limiter.rate_limit import rate_limiter
 
-async def safe_api_call(prompt: str, model: str) -> str:
+async def safe_api_call(prompt: str, provider: str, model: str) -> str:
     payload = {"prompt": prompt, "model": model}
     estimated_token_consumption = len(prompt) // 4 + 1000
 
     # wait for rate limit to become available
-    await rate_limiter.wait_and_acquire(provider="openai", model=model, tokens=estimated_token_consumption)
+    await rate_limiter.wait_and_acquire(provider=provider, model=model, tokens=estimated_token_consumption)
 
     # make the API call
     response = await make_actual_api_call(payload)
 
     # record usage
-    rate_limiter.record_usage(provider="openai", model=model, tokens_used=response.usage.total_tokens)
+    rate_limiter.record_usage(provider=provider, model=model, tokens_used=response.usage.total_tokens)
 
     return response.json()
 
 # we can generate all the requests and then allow the rate limiter to safely execute them in parallel
 async def main():
     model = "gpt-4o"
+    provider = "openai"
     prompts = [str(i) for i in range(10)]
-    tasks = [safe_api_call(prompt, model) for prompt in prompts]
+    tasks = [safe_api_call(prompt, provider, model) for prompt in prompts]
     responses = await asyncio.gather(*tasks)
 
 asyncio.run(main())
