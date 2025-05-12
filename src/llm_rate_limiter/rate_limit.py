@@ -30,7 +30,7 @@ class RateLimit:
         stats_path: str = RATE_LIMIT_STATS_PATH,
         monitor_interval: float = RATE_LIMIT_WRITE_INTERVAL,
         disable_monitoring: bool = False,
-        config: RateLimitConfig = None,
+        config: Optional[RateLimitConfig] = None,
     ) -> None:
         """Initialize the rate limit handler.
 
@@ -43,8 +43,6 @@ class RateLimit:
         self._provider_model_configs: dict[str, dict[str, ModelRateLimitConfig]] = {}
         self._provider_model_states: dict[str, dict[str, dict]] = {}
         self._locks: dict[str, dict[str, threading.Lock]] = {}
-        self._semaphores: dict[str, dict[str, asyncio.Semaphore]] = {}
-        self._concurrent_requests: dict[str, dict[str, int]] = {}
 
         # Stats monitoring
         self._stats_path = stats_path
@@ -75,25 +73,13 @@ class RateLimit:
 
             try:
 
-                def run_monitor():
+                def run_monitor() -> None:
                     while self._monitor_running:
                         try:
-                            # Get stats for all providers/models
-                            stats = {"timestamp": time.time(), "stats": {}}
-                            for provider in self.providers:
-                                stats["stats"][provider] = {}
-                                for model in self._provider_model_configs[provider]:
-                                    with self._locks[provider][model]:
-                                        current_concurrent = self._concurrent_requests[provider][
-                                            model
-                                        ]
-                                        logger.debug(
-                                            f"Monitor thread - {provider}/{model} concurrent requests: {current_concurrent}"
-                                        )
-                                        stats["stats"][provider][model] = self.get_usage_stats(
-                                            provider, model
-                                        )
-
+                            stats = {
+                                "timestamp": time.time(),
+                                "stats": self.get_usage_stats(),
+                            }
                             # Ensure directory exists
                             stats_dir = os.path.dirname(self._stats_path)
                             os.makedirs(stats_dir, exist_ok=True)
@@ -138,8 +124,6 @@ class RateLimit:
             self._provider_model_configs[provider] = {}
             self._provider_model_states[provider] = {}
             self._locks[provider] = {}
-            self._semaphores[provider] = {}
-            self._concurrent_requests[provider] = {}
 
         self._provider_model_configs[provider][model] = config
 
@@ -152,10 +136,6 @@ class RateLimit:
 
         # Initialize lock
         self._locks[provider][model] = threading.Lock()
-
-        # Initialize semaphore for concurrent request limiting
-        self._semaphores[provider][model] = asyncio.Semaphore(config.concurrent_requests)
-        self._concurrent_requests[provider][model] = 0
 
         # Start monitoring if enabled and not already started
         self._ensure_monitor_started()
@@ -240,53 +220,37 @@ class RateLimit:
             logger.warning(f"No rate limit config for {provider}/{model}, allowing request")
             return True
 
-        # Wait for semaphore (limits concurrent requests)
-        await self._semaphores[provider][model].acquire()
-        try:
-            with self._locks[provider][model]:
-                self._concurrent_requests[provider][model] += 1
-                logger.debug(
-                    f"Concurrent requests for {provider}/{model}: {self._concurrent_requests[provider][model]}"
-                )
-                try:
-                    self._cleanup_old_data(provider, model)
+        with self._locks[provider][model]:
+            self._cleanup_old_data(provider, model)
+            state = self._provider_model_states[provider][model]
+            current_time = time.time()
 
-                    state = self._provider_model_states[provider][model]
-                    current_time = time.time()
-
-                    # Check requests per minute
-                    if config.requests_per_minute > 0:
-                        current_rpm = len(state["request_timestamps"])
-                        if current_rpm >= config.requests_per_minute:
-                            logger.warning(
-                                f"Rate limit exceeded for {provider}/{model}: "
-                                f"{current_rpm}/{config.requests_per_minute} requests per minute"
-                            )
-                            return False
-
-                    # Check tokens per minute
-                    if config.tokens_per_minute > 0 and tokens > 0:
-                        current_tpm = sum(tok for _, tok in state["token_usage"])
-                        if current_tpm + tokens > config.tokens_per_minute:
-                            logger.warning(
-                                f"Token rate limit exceeded for {provider}/{model}: "
-                                f"{current_tpm + tokens}/{config.tokens_per_minute} tokens per minute"
-                            )
-                            return False
-
-                    # Update state with this request
-                    state["request_timestamps"].append(current_time)
-                    if tokens > 0:
-                        state["token_usage"].append((current_time, tokens))
-
-                    return True
-                finally:
-                    self._concurrent_requests[provider][model] -= 1
-                    logger.debug(
-                        f"Concurrent requests for {provider}/{model} after decrement: {self._concurrent_requests[provider][model]}"
+            # Check requests per minute
+            if config.requests_per_minute > 0:
+                current_rpm = len(state["request_timestamps"])
+                if current_rpm >= config.requests_per_minute:
+                    logger.warning(
+                        f"Rate limit exceeded for {provider}/{model}: "
+                        f"{current_rpm}/{config.requests_per_minute} requests per minute"
                     )
-        finally:
-            self._semaphores[provider][model].release()
+                    return False
+
+            # Check tokens per minute
+            if config.tokens_per_minute > 0 and tokens > 0:
+                current_tpm = sum(tok for _, tok in state["token_usage"])
+                if current_tpm + tokens > config.tokens_per_minute:
+                    logger.warning(
+                        f"Token rate limit exceeded for {provider}/{model}: "
+                        f"{current_tpm + tokens}/{config.tokens_per_minute} tokens per minute"
+                    )
+                    return False
+
+            # Update state with this request
+            state["request_timestamps"].append(current_time)
+            if tokens > 0:
+                state["token_usage"].append((current_time, tokens))
+
+            return True
 
     async def wait_and_acquire(
         self, provider: str, model: str, tokens: int = 0, max_retries: int = 10
@@ -334,6 +298,11 @@ class RateLimit:
                 timestamp, _ = state["token_usage"][-1]
                 state["token_usage"][-1] = (timestamp, tokens_used)
 
+            # Decrement concurrent requests counter when request is complete
+            logger.debug(
+                f"Concurrent requests for {provider}/{model} after completion: {len(state['request_timestamps'])}"
+            )
+
     def get_usage_stats(
         self, provider: Optional[str] = None, model: Optional[str] = None
     ) -> dict[str, Any]:
@@ -377,7 +346,6 @@ class RateLimit:
             config = self._provider_model_configs[provider][model]
             current_rpm = len(state["request_timestamps"])
             current_tpm = sum(tok for _, tok in state["token_usage"])
-            current_concurrent = self._concurrent_requests[provider][model]
 
             return {
                 "requests_per_minute": {
@@ -395,15 +363,6 @@ class RateLimit:
                     "percent": (
                         (current_tpm / config.tokens_per_minute * 100)
                         if config.tokens_per_minute
-                        else 0
-                    ),
-                },
-                "concurrent_requests": {
-                    "current": current_concurrent,
-                    "limit": config.concurrent_requests,
-                    "percent": (
-                        (current_concurrent / config.concurrent_requests * 100)
-                        if config.concurrent_requests
                         else 0
                     ),
                 },

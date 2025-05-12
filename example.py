@@ -17,20 +17,16 @@ from llm_rate_limiter.rate_limit import rate_limiter
 litellm._logging._disable_debugging()
 
 
-def estimate_tokens(payload: dict) -> int:
-    # simple helper to estimate number of tokens; upper bound on actual number of tokens
-    return len(payload["messages"][0]["content"]) // 4 + payload["max_tokens"]
-
-
 async def make_api_call(prompt: str, provider: str, model_name: str) -> tuple[str, dict]:
     # setup payload
+    max_tokens = 1000
     payload = {
         "model": f"{provider}/{model_name}" if "gemini" not in provider else model_name,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
-        "max_tokens": 1000,
+        "max_tokens": max_tokens,
     }
-    est_token_consumption = estimate_tokens(payload)
+    est_token_consumption = len(prompt) // 4 + max_tokens
     time_dict = dict(instantiation_time=time.time())
 
     # wait for rate limit to become available
@@ -56,7 +52,7 @@ async def make_api_call(prompt: str, provider: str, model_name: str) -> tuple[st
     return content, time_dict
 
 
-async def run(endpoints: list[tuple[str, str]], prompts: list[str]) -> None:
+async def run(endpoints: list[tuple[str, str]], prompts: list[str]) -> pd.DataFrame:
     tasks = [
         make_api_call(prompt, provider, model_name)
         for prompt in prompts
@@ -77,7 +73,7 @@ class ExampleConfig:
 
 @draccus.wrap()
 def main(cfg: ExampleConfig) -> None:
-    if cfg.run_all:
+    if cfg.run_all and rate_limiter._config is not None:
         provider_model_names = [
             (provider, name)
             for provider, names in rate_limiter._config.get_provider_to_model_name().items()
@@ -87,9 +83,6 @@ def main(cfg: ExampleConfig) -> None:
         provider_model_names = [(cfg.provider, cfg.model_name)]
 
     prompts = [str(i) for i in range(cfg.n_reqs)]
-
-    ###
-    provider_model_names = provider_model_names[:1]
 
     # override the rate limit config for this example script --> make one request lag the others
     for provider, model in provider_model_names:

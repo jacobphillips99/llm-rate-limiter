@@ -68,7 +68,7 @@ class RateLimitUI:
         else:
             return f"{percent:.1f}%"  # Would be red in color terminal
 
-    def _safe_addstr(self, stdscr: t.Any, y: int, x: int, text: str, *args) -> bool:
+    def _safe_addstr(self, stdscr: t.Any, y: int, x: int, text: str, *args: t.Any) -> bool:
         """Safely add a string to the screen, checking boundaries.
 
         Args:
@@ -125,7 +125,6 @@ class RateLimitUI:
         self._safe_addstr(stdscr, y, 0, "PROVIDER/MODEL", curses.A_BOLD)
         self._safe_addstr(stdscr, y, 25, "REQUESTS/MIN", curses.A_BOLD)
         self._safe_addstr(stdscr, y, 50, "TOKENS/MIN", curses.A_BOLD)
-        self._safe_addstr(stdscr, y, 75, "CONCURRENT", curses.A_BOLD)
         y += 1
 
         # Separator
@@ -186,20 +185,6 @@ class RateLimitUI:
             bar = self._format_bar(tpm_percent)
             percent = self._format_percent(tpm_percent)
             self._safe_addstr(stdscr, y, 50 + len(tpm_str) + 1, f"{bar} {percent}")
-
-        # Concurrent
-        conc_stats = stats.get("concurrent_requests", {})
-        conc_current = conc_stats.get("current", 0)
-        conc_limit = conc_stats.get("limit", 0)
-        conc_percent = conc_stats.get("percent", 0)
-
-        conc_str = f"{conc_current}/{conc_limit}"
-        self._safe_addstr(stdscr, y, 75, conc_str)
-
-        if conc_limit > 0:
-            bar = self._format_bar(conc_percent)
-            percent = self._format_percent(conc_percent)
-            self._safe_addstr(stdscr, y, 75 + len(conc_str) + 1, f"{bar} {percent}")
 
         return y + 1
 
