@@ -7,6 +7,7 @@ last request must wait for the rate limit to clear.
 import asyncio
 import time
 from dataclasses import dataclass
+from typing import Optional
 
 import draccus
 import litellm
@@ -69,6 +70,7 @@ class ExampleConfig:
     provider: str = "openai"
     model_name: str = "gpt-4o-mini"
     n_reqs: int = 3
+    rpm_limit: Optional[int] = None
 
 
 @draccus.wrap()
@@ -85,12 +87,13 @@ def main(cfg: ExampleConfig) -> None:
     prompts = [str(i) for i in range(cfg.n_reqs)]
 
     # override the rate limit config for this example script --> make one request lag the others
+    rpm_limit = cfg.rpm_limit if cfg.rpm_limit else cfg.n_reqs -1
     for provider, model in provider_model_names:
-        rate_limiter._provider_model_configs[provider][model].requests_per_minute = cfg.n_reqs - 1
+        rate_limiter._provider_model_configs[provider][model].requests_per_minute = rpm_limit
         rate_limiter._provider_model_configs[provider][model].tokens_per_minute = cfg.n_reqs * 1500
 
     print(
-        f"Instantiating {cfg.n_reqs} requests over {len(provider_model_names)} models each with a rate limit of {cfg.n_reqs - 1} requests per minute"
+        f"Instantiating {cfg.n_reqs} requests over {len(provider_model_names)} models each with a rate limit of {rpm_limit} requests per minute"
     )
     time_df = asyncio.run(run(endpoints=provider_model_names, prompts=prompts))
     wait_times = time_df.rate_limit_acquired_time - time_df.instantiation_time

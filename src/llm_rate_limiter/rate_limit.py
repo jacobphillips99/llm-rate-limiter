@@ -229,20 +229,12 @@ class RateLimit:
             if config.requests_per_minute > 0:
                 current_rpm = len(state["request_timestamps"])
                 if current_rpm >= config.requests_per_minute:
-                    logger.warning(
-                        f"Rate limit exceeded for {provider}/{model}: "
-                        f"{current_rpm}/{config.requests_per_minute} requests per minute"
-                    )
                     return False
 
             # Check tokens per minute
             if config.tokens_per_minute > 0 and tokens > 0:
                 current_tpm = sum(tok for _, tok in state["token_usage"])
                 if current_tpm + tokens > config.tokens_per_minute:
-                    logger.warning(
-                        f"Token rate limit exceeded for {provider}/{model}: "
-                        f"{current_tpm + tokens}/{config.tokens_per_minute} tokens per minute"
-                    )
                     return False
 
             # Update state with this request
@@ -253,7 +245,7 @@ class RateLimit:
             return True
 
     async def wait_and_acquire(
-        self, provider: str, model: str, tokens: int = 0, max_retries: int = 10
+        self, provider: str, model: str, tokens: int = 0
     ) -> bool:
         """Wait until rate limit allows and acquire permission.
 
@@ -261,21 +253,26 @@ class RateLimit:
             provider: The provider name
             model: The model name
             tokens: Estimated token usage for this request
-            max_retries: Maximum number of retry attempts
 
         Returns:
-            True if permission is granted, raises an exception if max retries exceeded
+            True when permission is granted
+
+        Raises:
+            RuntimeError: If unable to acquire permission within 10 minutes
         """
-        for attempt in range(max_retries):
+        start_time = time.time()
+        timeout = 600  # 10 minutes in seconds
+
+        while True:
             if await self.acquire(provider, model, tokens):
                 return True
 
-            # Exponential backoff with jitter
-            backoff_time = min(2**attempt + (0.1 * attempt), 60)
-            logger.info(f"Rate limit reached, waiting {backoff_time:.2f}s before retry")
-            await asyncio.sleep(backoff_time)
-
-        raise RuntimeError(f"Failed to acquire rate limit after {max_retries} retries")
+            # Check if we've exceeded the timeout
+            if time.time() - start_time > timeout:
+                raise RuntimeError(
+                    f"Failed to acquire rate limit for {provider}/{model} after 10 minutes"
+                )
+            await asyncio.sleep(1)
 
     def record_usage(self, provider: str, model: str, tokens_used: int) -> None:
         """Record actual token usage after a request.
