@@ -2,4 +2,3 @@ pydantic
 draccus
 pyyaml
 aiohttp
-litellm
