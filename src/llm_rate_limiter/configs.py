@@ -14,7 +14,6 @@ class ModelRateLimitConfig(BaseModel):
 
     requests_per_minute: int = Field(default=0, ge=0)
     tokens_per_minute: int = Field(default=0, ge=0)
-    concurrent_requests: int = Field(default=10, gt=0)
 
     class Config:
         """Pydantic config."""

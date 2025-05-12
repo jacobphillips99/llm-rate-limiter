@@ -298,11 +298,6 @@ class RateLimit:
                 timestamp, _ = state["token_usage"][-1]
                 state["token_usage"][-1] = (timestamp, tokens_used)
 
-            # Decrement concurrent requests counter when request is complete
-            logger.debug(
-                f"Concurrent requests for {provider}/{model} after completion: {len(state['request_timestamps'])}"
-            )
-
     def get_usage_stats(
         self, provider: Optional[str] = None, model: Optional[str] = None
     ) -> dict[str, Any]:
