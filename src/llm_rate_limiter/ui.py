@@ -9,7 +9,8 @@ import typing as t
 
 from llm_rate_limiter.constants import RATE_LIMIT_STATS_PATH
 
-class RateMonitor:
+
+class RateLimitUI:
     """Terminal UI for monitoring rate limits."""
 
     def __init__(self, stats_path: str = RATE_LIMIT_STATS_PATH, refresh_rate: float = 0.5) -> None:
@@ -67,6 +68,30 @@ class RateMonitor:
         else:
             return f"{percent:.1f}%"  # Would be red in color terminal
 
+    def _safe_addstr(self, stdscr: t.Any, y: int, x: int, text: str, *args) -> bool:
+        """Safely add a string to the screen, checking boundaries.
+
+        Args:
+            stdscr: Curses window
+            y: Y position
+            x: X position
+            text: Text to add
+            *args: Additional arguments for addstr
+
+        Returns:
+            True if the string was added successfully, False otherwise
+        """
+        try:
+            max_y, max_x = stdscr.getmaxyx()
+            if y >= max_y or x >= max_x:
+                return False
+            if x + len(text) > max_x:
+                text = text[: max_x - x]
+            stdscr.addstr(y, x, text, *args)
+            return True
+        except curses.error:
+            return False
+
     def _draw_header(self, stdscr: t.Any, y: int) -> int:
         """Draw the header section.
 
@@ -77,28 +102,34 @@ class RateMonitor:
         Returns:
             Next y position
         """
-        _, max_x = stdscr.getmaxyx()
+        max_y, max_x = stdscr.getmaxyx()
+        if y >= max_y:
+            return y
 
         # Title
-        stdscr.addstr(y, 0, "API Rate Limit Monitor", curses.A_BOLD)
+        self._safe_addstr(stdscr, y, 0, "API Rate Limit Monitor", curses.A_BOLD)
         y += 1
 
         # Last update time
-        if self.last_update_time:
+        if self.last_update_time and y < max_y:
             time_str = time.strftime("%H:%M:%S", time.localtime(self.last_update_time))
             update_str = f"Last Update: {time_str}"
-            stdscr.addstr(y, 0, update_str)
+            self._safe_addstr(stdscr, y, 0, update_str)
         y += 2
 
+        # Check if we have enough space for headers
+        if y + 2 >= max_y:
+            return y
+
         # Column headers
-        stdscr.addstr(y, 0, "PROVIDER/MODEL", curses.A_BOLD)
-        stdscr.addstr(y, 25, "REQUESTS/MIN", curses.A_BOLD)
-        stdscr.addstr(y, 50, "TOKENS/MIN", curses.A_BOLD)
-        stdscr.addstr(y, 75, "CONCURRENT", curses.A_BOLD)
+        self._safe_addstr(stdscr, y, 0, "PROVIDER/MODEL", curses.A_BOLD)
+        self._safe_addstr(stdscr, y, 25, "REQUESTS/MIN", curses.A_BOLD)
+        self._safe_addstr(stdscr, y, 50, "TOKENS/MIN", curses.A_BOLD)
+        self._safe_addstr(stdscr, y, 75, "CONCURRENT", curses.A_BOLD)
         y += 1
 
         # Separator
-        stdscr.addstr(y, 0, "─" * (max_x - 1))
+        self._safe_addstr(stdscr, y, 0, "─" * (max_x - 1))
         y += 1
 
         return y
@@ -118,11 +149,15 @@ class RateMonitor:
         Returns:
             Next y position
         """
+        max_y, max_x = stdscr.getmaxyx()
+        if y >= max_y:
+            return y
+
         # Provider/model
         model_name = f"{provider}/{model}"
         if len(model_name) > 24:
             model_name = model_name[:21] + "..."
-        stdscr.addstr(y, 0, model_name)
+        self._safe_addstr(stdscr, y, 0, model_name)
 
         # RPM
         rpm_stats = stats.get("requests_per_minute", {})
@@ -131,12 +166,12 @@ class RateMonitor:
         rpm_percent = rpm_stats.get("percent", 0)
 
         rpm_str = f"{rpm_current}/{rpm_limit}"
-        stdscr.addstr(y, 25, rpm_str)
+        self._safe_addstr(stdscr, y, 25, rpm_str)
 
         if rpm_limit > 0:
             bar = self._format_bar(rpm_percent)
             percent = self._format_percent(rpm_percent)
-            stdscr.addstr(y, 25 + len(rpm_str) + 1, f"{bar} {percent}")
+            self._safe_addstr(stdscr, y, 25 + len(rpm_str) + 1, f"{bar} {percent}")
 
         # TPM
         tpm_stats = stats.get("tokens_per_minute", {})
@@ -145,12 +180,12 @@ class RateMonitor:
         tpm_percent = tpm_stats.get("percent", 0)
 
         tpm_str = f"{tpm_current}/{tpm_limit}"
-        stdscr.addstr(y, 50, tpm_str)
+        self._safe_addstr(stdscr, y, 50, tpm_str)
 
         if tpm_limit > 0:
             bar = self._format_bar(tpm_percent)
             percent = self._format_percent(tpm_percent)
-            stdscr.addstr(y, 50 + len(tpm_str) + 1, f"{bar} {percent}")
+            self._safe_addstr(stdscr, y, 50 + len(tpm_str) + 1, f"{bar} {percent}")
 
         # Concurrent
         conc_stats = stats.get("concurrent_requests", {})
@@ -159,12 +194,12 @@ class RateMonitor:
         conc_percent = conc_stats.get("percent", 0)
 
         conc_str = f"{conc_current}/{conc_limit}"
-        stdscr.addstr(y, 75, conc_str)
+        self._safe_addstr(stdscr, y, 75, conc_str)
 
         if conc_limit > 0:
             bar = self._format_bar(conc_percent)
             percent = self._format_percent(conc_percent)
-            stdscr.addstr(y, 75 + len(conc_str) + 1, f"{bar} {percent}")
+            self._safe_addstr(stdscr, y, 75 + len(conc_str) + 1, f"{bar} {percent}")
 
         return y + 1
 
@@ -185,7 +220,7 @@ class RateMonitor:
 
         # Handle errors
         if "error" in stats:
-            stdscr.addstr(y, 0, f"Error: {stats['error']}")
+            self._safe_addstr(stdscr, y, 0, f"Error: {stats['error']}")
             stdscr.refresh()
             return
 
@@ -194,10 +229,13 @@ class RateMonitor:
             for model, model_stats in provider_stats.items():
                 if "error" not in model_stats:
                     y = self._draw_model_stats(stdscr, y, provider, model, model_stats)
+                    if y >= stdscr.getmaxyx()[0]:
+                        break
 
         # Footer
         max_y, _ = stdscr.getmaxyx()
-        stdscr.addstr(max_y - 1, 0, "Press 'q' to quit, 'r' to refresh")
+        if max_y > 0:
+            self._safe_addstr(stdscr, max_y - 1, 0, "Press 'q' to quit, 'r' to refresh")
 
         stdscr.refresh()
 

@@ -1,15 +1,12 @@
 """Rate limiting utilities for API calls with built-in monitoring."""
 
-
 import logging
 from typing import Any
 
 import yaml
-
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
-
 
 
 class ModelRateLimitConfig(BaseModel):
@@ -35,6 +32,13 @@ class RateLimitConfig(BaseModel):
     """Top level rate limit configuration for all providers."""
 
     providers: dict[str, ProviderRateLimits] = Field(default_factory=dict)
+
+    def get_provider_to_model_name(self) -> dict[str, list[str]]:
+        """Get a mapping of provider to model name."""
+        return {
+            provider: list(self.providers[provider].models.keys())
+            for provider in self.providers.keys()
+        }
 
 
 def load_yaml_config(file_path: str) -> dict[str, Any]:

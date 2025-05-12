@@ -1,21 +1,26 @@
 import asyncio
 import json
-import os
-import time
-import threading
-from typing import Optional, Any
 import logging
+import os
+import threading
+import time
+from typing import Any, Optional
 
 from llm_rate_limiter.configs import ModelRateLimitConfig, RateLimitConfig, load_rate_limit_configs
-from llm_rate_limiter.constants import DEFAULT_RATE_LIMIT_CONFIG_PATH, RATE_LIMIT_STATS_PATH, RATE_LIMIT_WRITE_INTERVAL
+from llm_rate_limiter.constants import (
+    DEFAULT_RATE_LIMIT_CONFIG_PATH,
+    RATE_LIMIT_STATS_PATH,
+    RATE_LIMIT_WRITE_INTERVAL,
+)
 
-log_level = os.environ.get('LLM_RATE_LIMIT_LOG_LEVEL', 'INFO').upper()
+log_level = os.environ.get("LLM_RATE_LIMIT_LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, log_level, logging.INFO),  # fallback to INFO if invalid level
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
 logger = logging.getLogger(__name__)
+
 
 class RateLimit:
     """Rate limit handler for API calls with built-in monitoring."""
@@ -39,12 +44,14 @@ class RateLimit:
         self._provider_model_states: dict[str, dict[str, dict]] = {}
         self._locks: dict[str, dict[str, threading.Lock]] = {}
         self._semaphores: dict[str, dict[str, asyncio.Semaphore]] = {}
+        self._concurrent_requests: dict[str, dict[str, int]] = {}
 
         # Stats monitoring
         self._stats_path = stats_path
         self._monitor_interval = monitor_interval
         self._monitor_running = not disable_monitoring
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: Optional[threading.Thread] = None
+        self._monitor_lock = threading.Lock()
 
         # Start monitoring automatically if not disabled
         if self._monitor_running:
@@ -58,19 +65,53 @@ class RateLimit:
 
     def _ensure_monitor_started(self) -> None:
         """Ensure the monitoring task is started if enabled."""
-        if self._monitor_running and self._monitor_task is None:
-            try:
-                # Get the current event loop or create one if needed
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
+        if not self._monitor_running:
+            return
 
-                # Create the monitoring task
-                self._monitor_task = loop.create_task(self._monitor_loop())
+        # Use a class-level lock to ensure thread safety
+        with self._monitor_lock:
+            if self._monitor_task is not None:
+                return
+
+            try:
+
+                def run_monitor():
+                    while self._monitor_running:
+                        try:
+                            # Get stats for all providers/models
+                            stats = {"timestamp": time.time(), "stats": {}}
+                            for provider in self.providers:
+                                stats["stats"][provider] = {}
+                                for model in self._provider_model_configs[provider]:
+                                    with self._locks[provider][model]:
+                                        current_concurrent = self._concurrent_requests[provider][
+                                            model
+                                        ]
+                                        logger.debug(
+                                            f"Monitor thread - {provider}/{model} concurrent requests: {current_concurrent}"
+                                        )
+                                        stats["stats"][provider][model] = self.get_usage_stats(
+                                            provider, model
+                                        )
+
+                            # Ensure directory exists
+                            stats_dir = os.path.dirname(self._stats_path)
+                            os.makedirs(stats_dir, exist_ok=True)
+
+                            with open(self._stats_path, "w") as f:
+                                json.dump(stats, f, indent=2)
+                                f.flush()
+                                os.fsync(f.fileno())
+
+                        except Exception as e:
+                            logger.error(f"Error writing stats to {self._stats_path}: {e}")
+                        time.sleep(self._monitor_interval)
+
+                thread = threading.Thread(target=run_monitor, daemon=True)
+                thread.start()
+                self._monitor_task = thread
                 logger.info(
-                    f"Started rate limit monitoring, writing to {self._stats_path} every {self._monitor_interval}s"
+                    f"Started rate limit monitoring at {time.time()}, writing to {self._stats_path} every {self._monitor_interval}s"
                 )
             except Exception as e:
                 logger.error(f"Failed to start monitoring: {e}")
@@ -98,6 +139,7 @@ class RateLimit:
             self._provider_model_states[provider] = {}
             self._locks[provider] = {}
             self._semaphores[provider] = {}
+            self._concurrent_requests[provider] = {}
 
         self._provider_model_configs[provider][model] = config
 
@@ -113,6 +155,7 @@ class RateLimit:
 
         # Initialize semaphore for concurrent request limiting
         self._semaphores[provider][model] = asyncio.Semaphore(config.concurrent_requests)
+        self._concurrent_requests[provider][model] = 0
 
         # Start monitoring if enabled and not already started
         self._ensure_monitor_started()
@@ -124,6 +167,7 @@ class RateLimit:
         Args:
             config: Rate limit configuration
         """
+        self._config = config
         for provider, provider_config in config.providers.items():
             for model, model_config in provider_config.models.items():
                 self.register_model(provider, model, model_config)
@@ -197,39 +241,52 @@ class RateLimit:
             return True
 
         # Wait for semaphore (limits concurrent requests)
-        async with self._semaphores[provider][model]:
+        await self._semaphores[provider][model].acquire()
+        try:
             with self._locks[provider][model]:
-                self._cleanup_old_data(provider, model)
+                self._concurrent_requests[provider][model] += 1
+                logger.debug(
+                    f"Concurrent requests for {provider}/{model}: {self._concurrent_requests[provider][model]}"
+                )
+                try:
+                    self._cleanup_old_data(provider, model)
 
-                state = self._provider_model_states[provider][model]
-                current_time = time.time()
+                    state = self._provider_model_states[provider][model]
+                    current_time = time.time()
 
-                # Check requests per minute
-                if config.requests_per_minute > 0:
-                    current_rpm = len(state["request_timestamps"])
-                    if current_rpm >= config.requests_per_minute:
-                        logger.warning(
-                            f"Rate limit exceeded for {provider}/{model}: "
-                            f"{current_rpm}/{config.requests_per_minute} requests per minute"
-                        )
-                        return False
+                    # Check requests per minute
+                    if config.requests_per_minute > 0:
+                        current_rpm = len(state["request_timestamps"])
+                        if current_rpm >= config.requests_per_minute:
+                            logger.warning(
+                                f"Rate limit exceeded for {provider}/{model}: "
+                                f"{current_rpm}/{config.requests_per_minute} requests per minute"
+                            )
+                            return False
 
-                # Check tokens per minute
-                if config.tokens_per_minute > 0 and tokens > 0:
-                    current_tpm = sum(tok for _, tok in state["token_usage"])
-                    if current_tpm + tokens > config.tokens_per_minute:
-                        logger.warning(
-                            f"Token rate limit exceeded for {provider}/{model}: "
-                            f"{current_tpm + tokens}/{config.tokens_per_minute} tokens per minute"
-                        )
-                        return False
+                    # Check tokens per minute
+                    if config.tokens_per_minute > 0 and tokens > 0:
+                        current_tpm = sum(tok for _, tok in state["token_usage"])
+                        if current_tpm + tokens > config.tokens_per_minute:
+                            logger.warning(
+                                f"Token rate limit exceeded for {provider}/{model}: "
+                                f"{current_tpm + tokens}/{config.tokens_per_minute} tokens per minute"
+                            )
+                            return False
 
-                # Update state with this request
-                state["request_timestamps"].append(current_time)
-                if tokens > 0:
-                    state["token_usage"].append((current_time, tokens))
+                    # Update state with this request
+                    state["request_timestamps"].append(current_time)
+                    if tokens > 0:
+                        state["token_usage"].append((current_time, tokens))
 
-                return True
+                    return True
+                finally:
+                    self._concurrent_requests[provider][model] -= 1
+                    logger.debug(
+                        f"Concurrent requests for {provider}/{model} after decrement: {self._concurrent_requests[provider][model]}"
+                    )
+        finally:
+            self._semaphores[provider][model].release()
 
     async def wait_and_acquire(
         self, provider: str, model: str, tokens: int = 0, max_retries: int = 10
@@ -320,6 +377,7 @@ class RateLimit:
             config = self._provider_model_configs[provider][model]
             current_rpm = len(state["request_timestamps"])
             current_tpm = sum(tok for _, tok in state["token_usage"])
+            current_concurrent = self._concurrent_requests[provider][model]
 
             return {
                 "requests_per_minute": {
@@ -341,36 +399,15 @@ class RateLimit:
                     ),
                 },
                 "concurrent_requests": {
-                    "current": config.concurrent_requests
-                    - self._semaphores[provider][model]._value,
+                    "current": current_concurrent,
                     "limit": config.concurrent_requests,
                     "percent": (
-                        (config.concurrent_requests - self._semaphores[provider][model]._value)
-                        / config.concurrent_requests
-                        * 100
+                        (current_concurrent / config.concurrent_requests * 100)
+                        if config.concurrent_requests
+                        else 0
                     ),
                 },
             }
-
-    async def _monitor_loop(self) -> None:
-        """Background task to periodically write stats to file."""
-        try:
-            while self._monitor_running:
-                stats = {"timestamp": time.time(), "stats": self.get_usage_stats()}
-
-                # Ensure directory exists
-                os.makedirs(os.path.dirname(self._stats_path), exist_ok=True)
-
-                # Write stats to file atomically
-                tmp_path = f"{self._stats_path}.tmp"
-                with open(tmp_path, "w") as f:
-                    json.dump(stats, f, indent=2)
-                os.rename(tmp_path, self._stats_path)
-
-                await asyncio.sleep(self._monitor_interval)
-        except Exception as e:
-            logger.error(f"Error in monitor loop: {e}")
-            self._monitor_running = False
 
 
 # Global rate limiter instance
@@ -379,6 +416,8 @@ rate_limiter = RateLimit()
 # Load rate limit config from file
 if "RATE_LIMIT_CONFIG_PATH" not in os.environ:
     logger.warning("RATE_LIMIT_CONFIG_PATH not set, using default `Free / Tier 1` config")
-    rate_limiter.load_config(os.path.join(os.path.dirname(__file__), DEFAULT_RATE_LIMIT_CONFIG_PATH))
+    rate_limiter.load_config(
+        os.path.join(os.path.dirname(__file__), DEFAULT_RATE_LIMIT_CONFIG_PATH)
+    )
 else:
     rate_limiter.load_config(os.environ["RATE_LIMIT_CONFIG_PATH"])

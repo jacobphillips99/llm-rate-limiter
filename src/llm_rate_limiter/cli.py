@@ -3,15 +3,16 @@ from dataclasses import dataclass
 
 import draccus
 
-from llm_rate_limiter.constants import RATE_LIMIT_STATS_PATH, MONITOR_REFRESH_RATE
-from llm_rate_limiter.monitor import RateMonitor
+from llm_rate_limiter.constants import MONITOR_REFRESH_RATE, RATE_LIMIT_STATS_PATH
+from llm_rate_limiter.ui import RateLimitUI
+
 
 @dataclass
 class MonitorConfig:
-    """Configuration for the rate monitor."""
+    """Configuration for the rate monitor as deployed in the CLI."""
 
-    stats_path: str = RATE_LIMIT_STATS_PATH  # Path to stats file
-    refresh_rate: float = MONITOR_REFRESH_RATE  # Refresh rate in seconds
+    stats_path: str = RATE_LIMIT_STATS_PATH
+    refresh_rate: float = MONITOR_REFRESH_RATE
 
 
 @draccus.wrap()
@@ -23,7 +24,7 @@ def main(cfg: MonitorConfig) -> None:
         cfg: Monitor configuration
     """
     # Run with curses
-    monitor = RateMonitor(cfg.stats_path, cfg.refresh_rate)
+    monitor = RateLimitUI(cfg.stats_path, cfg.refresh_rate)
     curses.wrapper(monitor.run)
 
 

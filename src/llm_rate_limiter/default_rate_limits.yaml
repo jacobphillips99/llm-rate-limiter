@@ -4,6 +4,9 @@ openai:
   gpt-4o:
     requests_per_minute: 500
     tokens_per_minute: 30_000
+  gpt-4o-mini:
+    requests_per_minute: 500
+    tokens_per_minute: 200_000
   o4-mini:
     requests_per_minute: 500
     tokens_per_minute: 200_000
