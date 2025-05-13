@@ -1,6 +1,16 @@
 # LLM Rate Limiter
 
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
+Created by [Jacob Phillips](https://jacobdphillips.com/)
+
+
 A Python package for managing rate limits when making API calls to remote model providers. It provides built-in monitoring and visualization of rate limit usage across different providers and models.
+
+<img src="assets/ui.png" alt="Rate Limiter UI"/>
+
 
 ## Features
 
@@ -86,7 +96,6 @@ asyncio.run(main())
 
 The package includes a terminal-based monitoring UI that shows real-time rate limit usage. While the rate limiter is running, it starts a separate thread to store, process, and save the rate limit data. This [`monitor`](https://github.com/jacobphillips99/llm-rate-limiter/blob/main/src/llm_rate_limiter/rate_limit.py#L76) lives inside the rate limiter and writes out the data to a file in the background. We build a [simple UI](https://github.com/jacobphillips99/llm-rate-limiter/blob/main/src/llm_rate_limiter/ui.py) to visualize the live rate limit data, which can be run in the terminal.
 
-<img src="assets/ui.png" alt="Rate Limiter UI"/>
 
 ## Acknowledgements and Citation
 This project was developed by [Jacob Phillips](https://jacobdphillips.com) as a part of the [Andreessen Horowitz American Dynamism Engineering Fellows program](https://a16z.com/the-american-dynamism-engineering-fellows-program/). Special thanks to the American Dynamism team for their support and feedback on the project.
