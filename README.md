@@ -25,15 +25,64 @@ A Python package for managing rate limits when making API calls to remote model 
 - Built-in monitoring and statistics tracking
 
 ## Installation
+<details>
+<summary>Click to expand</summary>
+Clone and install the package. We recomend using `uv` for fast and reliable dependency management.
 
+
+1. Install `uv` if you haven't already:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+2. Clone the repository
 ```bash
 git clone https://github.com/jacobphillips99/llm-rate-limiter
 cd llm-rate-limiter
-pip install -r requirements.txt
-# (optional dev dependencies)
-# pip install -r requirements-extras.txt
-pip install -e .
 ```
+
+3. Create and activate a virtual environment
+```
+uv venv .venv --python=python3.10
+source .venv/bin/activate
+```
+
+4. Install the package
+``` 
+uv pip install -r requirements.txt
+# (optional dev dependencies)
+# uv pip install -r requirements-extras.txt
+# use -e for editable mode
+uv pip install -e .
+```
+
+5. Set any API keys in your environment
+```bash
+export OPENAI_API_KEY="..."
+export ANTHROPIC_API_KEY="..."
+export GEMINI_API_KEY="..."
+```
+
+For the example script, we recomend also setting `LITELLM_LOG` to `ERROR` to avoid cluttering the terminal with debug logs.
+```bash
+export LITELLM_LOG="ERROR"
+```
+
+When using `llm-rate-limiter` in other packages, you can set the log level by setting the environment variable `LLM_RATE_LIMIT_LOG_LEVEL` which conforms to the [python logging levels](https://docs.python.org/3/library/logging.html#logging-levels).
+```bash
+export LLM_RATE_LIMIT_LOG_LEVEL="ERROR"
+```
+
+6. Try the example script!
+```bash
+python example.py
+```
+In a separate terminal, run the monitoring UI:
+```bash
+python -m llm_rate_limiter.ui
+```
+
+</details>
 
 ## Configuration
 

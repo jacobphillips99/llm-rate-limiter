@@ -30,6 +30,9 @@ async def make_api_call(prompt: str, provider: str, model_name: str) -> tuple[st
     est_token_consumption = len(prompt) // 4 + max_tokens
     time_dict = dict(instantiation_time=time.time())
 
+    # announce that the function is waiting for the rate limit
+    print(f"Call {prompt} waiting for rate limit!")
+
     # wait for rate limit to become available
     await rate_limiter.wait_and_acquire(
         provider=provider, model=model_name, tokens=est_token_consumption
@@ -91,16 +94,21 @@ def main(cfg: ExampleConfig) -> None:
     for provider, model in provider_model_names:
         rate_limiter._provider_model_configs[provider][model].requests_per_minute = rpm_limit
         rate_limiter._provider_model_configs[provider][model].tokens_per_minute = cfg.n_reqs * 1500
-
+    
+    print("-" * 100)
     print(
-        f"Instantiating {cfg.n_reqs} requests over {len(provider_model_names)} models each with a rate limit of {rpm_limit} requests per minute"
+        f"Instantiating {cfg.n_reqs} requests over {len(provider_model_names)} model{'s' if len(provider_model_names) > 1 else ''} each with a rate limit of {rpm_limit} requests per minute"
     )
+    print("-" * 100)
+    # actually instantiate the requests and run the main function
     time_df = asyncio.run(run(endpoints=provider_model_names, prompts=prompts))
     wait_times = time_df.rate_limit_acquired_time - time_df.instantiation_time
 
+    print("-" * 100)
     print(
         f"Wait times should be close to 0 for the first {cfg.n_reqs - 1} requests and slightly over a minute for the last request"
     )
+    print("-" * 100)
     print(f"Wait times: {wait_times}")
 
 
