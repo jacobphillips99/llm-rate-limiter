@@ -48,7 +48,7 @@ source .venv/bin/activate
 ```
 
 4. Install the package
-``` 
+```
 uv pip install -r requirements.txt
 # (optional dev dependencies)
 # uv pip install -r requirements-extras.txt
@@ -81,6 +81,12 @@ In a separate terminal, run the monitoring UI:
 ```bash
 python -m llm_rate_limiter.ui
 ```
+
+7. We use `pre-commit` to ensure code quality. After cloning the repo, install the pre-commit hooks by running:
+```bash
+pre-commit install
+```
+All setup is done!
 
 </details>
 

@@ -244,9 +244,7 @@ class RateLimit:
 
             return True
 
-    async def wait_and_acquire(
-        self, provider: str, model: str, tokens: int = 0
-    ) -> bool:
+    async def wait_and_acquire(self, provider: str, model: str, tokens: int = 0) -> bool:
         """Wait until rate limit allows and acquire permission.
 
         Args:

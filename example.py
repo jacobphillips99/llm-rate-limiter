@@ -90,11 +90,11 @@ def main(cfg: ExampleConfig) -> None:
     prompts = [str(i) for i in range(cfg.n_reqs)]
 
     # override the rate limit config for this example script --> make one request lag the others
-    rpm_limit = cfg.rpm_limit if cfg.rpm_limit else cfg.n_reqs -1
+    rpm_limit = cfg.rpm_limit if cfg.rpm_limit else cfg.n_reqs - 1
     for provider, model in provider_model_names:
         rate_limiter._provider_model_configs[provider][model].requests_per_minute = rpm_limit
         rate_limiter._provider_model_configs[provider][model].tokens_per_minute = cfg.n_reqs * 1500
-    
+
     print("-" * 100)
     print(
         f"Instantiating {cfg.n_reqs} requests over {len(provider_model_names)} model{'s' if len(provider_model_names) > 1 else ''} each with a rate limit of {rpm_limit} requests per minute"
