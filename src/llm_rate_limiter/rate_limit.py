@@ -112,6 +112,18 @@ class RateLimit:
         """
         return list(self._provider_model_configs.keys())
 
+    @property
+    def providers_to_models(self) -> dict[str, list[str]]:
+        """Get a dictionary of providers to their registered models.
+
+        Returns:
+            Dictionary of provider names to lists of model names
+        """
+        return {
+            provider: list(self._provider_model_configs[provider].keys())
+            for provider in self.providers
+        }
+
     def register_model(self, provider: str, model: str, config: ModelRateLimitConfig) -> None:
         """Register a model with its rate limit configuration.
 
