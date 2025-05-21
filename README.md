@@ -68,7 +68,7 @@ For the example script, we recomend also setting `LITELLM_LOG` to `ERROR` to avo
 export LITELLM_LOG="ERROR"
 ```
 
-When using `llm-rate-limiter` in other packages, you can set the log level by setting the environment variable `LLM_RATE_LIMIT_LOG_LEVEL` which conforms to the [python logging levels](https://docs.python.org/3/library/logging.html#logging-levels).
+When using `llm-rate-limiter` in other packages, you can set the log level by setting the environment variable `LLM_RATE_LIMIT_LOG_LEVEL` which conforms to the [python logging levels](https://docs.python.org/3/library/logging.html#logging-levels). See the [llm_rate_limiter/__init__.py](https://github.com/jacobphillips99/llm-rate-limiter/blob/main/src/llm_rate_limiter/__init__.py) file for more details.
 ```bash
 export LLM_RATE_LIMIT_LOG_LEVEL="ERROR"
 ```
